@@ -1,9 +1,13 @@
 from fastapi import FastAPI
+from sqlalchemy.orm import configure_mappers
+
 from .database import Base, engine
 from .routers import users
 from . import models  # ensures models are registered before create_all
 
 Base.metadata.create_all(bind=engine)   # creates tables (our no-Alembic shortcut)
+configure_mappers()
+
 
 app = FastAPI(title="TaskForge API")
 app.include_router(users.router)
