@@ -5,7 +5,9 @@ from jose import jwt, JWTError
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, oauth2
-from sqlalchemy.orm import Session
+from passlib.handlers.sun_md5_crypt import raw_sun_md5_crypt
+from pip._internal.utils import retry
+from sqlalchemy.orm import Session, dependency
 from .database import get_db
 from . import models
 
@@ -54,3 +56,22 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_error
     return user
 
+#we create a reusable authorization mechanism based on team role, in essencr ROLE BASED AUTHORIZATION
+#auth answer:who is the user, this func answers does the users have perms to perform this action
+def require_role(*allowed_roles: models.Role):
+    """builds a dependency that admits only given roles"""
+    def dependency(
+            team_id : int,
+            db: Session = Depends(get_db),
+            current_user: models.User = Depends(get_current_user),
+    ) -> models.TeamMembership:
+        membership = db.query(models.TeamMembership).filter(
+            models.TeamMembership.team_id == team_id,
+            models.TeamMembership.user_id == current_user.id,
+        ).first()
+        if membership is None:
+           raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not in the team")
+        if membership.role not in allowed_roles:
+           raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role for the action")
+        return membership
+    return dependency
