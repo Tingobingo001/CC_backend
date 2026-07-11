@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from sqlalchemy.orm import configure_mappers
 
 from .database import Base, engine
-from .routers import users
+from .routers import users, projects
 from . import models  # ensures models are registered before create_all
 from .routers import users, teams
 
@@ -19,3 +19,5 @@ def health():
     return {"status": "ok"}
 
 app.include_router(teams.router)
+app.include_router(projects.router)
+
