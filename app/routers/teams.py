@@ -109,3 +109,14 @@ def add_member(
     db.commit()
     return schemas.MemberOut(user_id=user.id, name=user.name, email=user.email, role=member_in.role)
 
+@router.get("/{team_id}/activity", response_model=list[schemas.ActivityOut])
+def team_activity(
+    team_id: int,
+    db: Session = Depends(get_db),
+    membership: models.TeamMembership = Depends(require_role(
+        models.Role.owner, models.Role.maintainer, models.Role.member, models.Role.viewer
+    )),
+):
+    return db.query(models.ActivityLog).filter(
+        models.ActivityLog.team_id == team_id
+    ).order_by(models.ActivityLog.created_at.desc()).all()

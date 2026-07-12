@@ -77,6 +77,7 @@ class Task(Base):
     status = Column(Enum(TaskStatus), nullable=False, default=TaskStatus.todo)
     priority = Column(Enum(TaskPriority), nullable=False, default=TaskPriority.medium)
     created_at = Column(DateTime,default = utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     project = relationship("Project", back_populates="tasks")
     assignments = relationship("TaskAssignment", back_populates="task")
