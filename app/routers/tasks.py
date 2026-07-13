@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from  ..import models, schemas
 from  ..database import get_db
 from ..auth import require_role
+from fastapi import Query
 
 router = APIRouter(prefix="/teams/{team_id}/projects/{project_id}/tasks",tags=["tasks"])
 
@@ -77,17 +78,6 @@ def create_task(
     db.flush()
 
     return task_to_out(task)
-
-@router.get("", response_model=list[schemas.TaskOut])
-def list_tasks(
-        team_id: int,
-        project_id: int,
-        db: Session = Depends(get_db),
-        membership: models.TeamMembership = Depends(require_role(*ALL_ROLES)),
-):
-    get_project_or_404(db, team_id, project_id)
-    tasks = db.query(models.Task).filter(models.Task.project_id == project_id).all()
-    return [task_to_out(task) for task in tasks]
 
 @router.get("/{task_id}", response_model=schemas.TaskOut)
 def get_task(
@@ -221,16 +211,6 @@ def create_task(
     return task_to_out(task)
 
 
-@router.get("", response_model=list[schemas.TaskOut])
-def list_tasks(
-    team_id: int,
-    project_id: int,
-    db: Session = Depends(get_db),
-    membership: models.TeamMembership = Depends(require_role(*ALL_ROLES)),
-):
-    get_project_or_404(db, team_id, project_id)
-    tasks = db.query(models.Task).filter(models.Task.project_id == project_id).all()
-    return [task_to_out(t) for t in tasks]
 
 
 @router.get("/{task_id}", response_model=schemas.TaskOut)
@@ -344,3 +324,29 @@ def unassign_user(
 
     db.delete(assignment)
     db.commit()
+
+@router.get("", response_model=list[schemas.TaskOut])
+def list_tasks(
+    team_id: int,
+    project_id: int,
+    search: str | None = Query(default=None, max_length=200, description="Search in task titles"),
+    status_filter: str | None = Query(default=None, alias="status"),
+    priority_filter: str | None = Query(default=None, alias="priority"),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    membership: models.TeamMembership = Depends(require_role(*ALL_ROLES)),
+):
+    get_project_or_404(db, team_id, project_id)
+
+    query = db.query(models.Task).filter(models.Task.project_id == project_id)
+
+    if search:
+        query = query.filter(models.Task.title.ilike(f"%{search}%"))
+    if status_filter:
+        query = query.filter(models.Task.status == parse_enum(models.TaskStatus, status_filter, "status"))
+    if priority_filter:
+        query = query.filter(models.Task.priority == parse_enum(models.TaskPriority, priority_filter, "priority"))
+
+    tasks = query.order_by(models.Task.created_at.desc()).offset(offset).limit(limit).all()
+    return [task_to_out(t) for t in tasks]

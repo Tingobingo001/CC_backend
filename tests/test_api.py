@@ -84,7 +84,7 @@ def test_login_unknown_email_same_message():
     r1 = client.post("/auth/login", data={"username": "owner@test.com", "password": "wrong"})
     r2 = client.post("/auth/login", data={"username": "ghost@test.com", "password": "wrong"})
     assert r1.status_code == r2.status_code == 401
-    assert r1.json()["detail"] == r2.json()["detail"]   # no email-probing
+    assert r1.json()["error"]["message"] == r2.json()["error"]["message"]
 
 def test_me_requires_auth():
     assert client.get("/auth/me").status_code == 401
@@ -261,3 +261,86 @@ def test_activity_feed():
     assert r.status_code == 200
     actions = " | ".join(a["action"] for a in r.json())
     assert "created team" in actions and "created task" in actions
+
+# ---------- search / filter / pagination ----------
+
+def test_seed_tasks_for_filtering():
+    """Create a known set of tasks to filter against."""
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    seed = [
+        {"title": "Fix homepage bug",    "status": "todo",        "priority": "high"},
+        {"title": "Write homepage copy", "status": "in_progress", "priority": "medium"},
+        {"title": "Deploy staging",      "status": "done",        "priority": "high"},
+        {"title": "Update readme",       "status": "todo",        "priority": "low"},
+    ]
+    for body in seed:
+        r = client.post(base, json=body, headers=auth(ctx["owner_token"]))
+        assert r.status_code == 201, r.text
+
+def test_search_by_title():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r = client.get(f"{base}?search=homepage", headers=auth(ctx["owner_token"]))
+    assert r.status_code == 200
+    titles = [t["title"] for t in r.json()]
+    assert all("homepage" in t.lower() for t in titles)
+    assert len(titles) >= 2
+
+def test_search_case_insensitive():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r1 = client.get(f"{base}?search=HOMEPAGE", headers=auth(ctx["owner_token"]))
+    r2 = client.get(f"{base}?search=homepage", headers=auth(ctx["owner_token"]))
+    assert len(r1.json()) == len(r2.json()) >= 2
+
+def test_search_no_results():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r = client.get(f"{base}?search=zzzznothing", headers=auth(ctx["owner_token"]))
+    assert r.status_code == 200 and r.json() == []
+
+def test_filter_by_status():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r = client.get(f"{base}?status=todo", headers=auth(ctx["owner_token"]))
+    assert r.status_code == 200
+    assert len(r.json()) >= 2
+    assert all(t["status"] == "todo" for t in r.json())
+
+def test_filter_by_priority():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r = client.get(f"{base}?priority=high", headers=auth(ctx["owner_token"]))
+    assert r.status_code == 200
+    assert len(r.json()) >= 2
+    assert all(t["priority"] == "high" for t in r.json())
+
+def test_combined_search_and_filter():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r = client.get(f"{base}?search=homepage&status=todo", headers=auth(ctx["owner_token"]))
+    assert r.status_code == 200
+    for t in r.json():
+        assert "homepage" in t["title"].lower() and t["status"] == "todo"
+
+def test_filter_invalid_status():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r = client.get(f"{base}?status=flying", headers=auth(ctx["owner_token"]))
+    assert r.status_code == 422
+
+def test_pagination_limit():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r = client.get(f"{base}?limit=2", headers=auth(ctx["owner_token"]))
+    assert r.status_code == 200 and len(r.json()) == 2
+
+def test_pagination_offset_no_overlap():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    page1 = client.get(f"{base}?limit=2&offset=0", headers=auth(ctx["owner_token"])).json()
+    page2 = client.get(f"{base}?limit=2&offset=2", headers=auth(ctx["owner_token"])).json()
+    ids1 = {t["id"] for t in page1}
+    ids2 = {t["id"] for t in page2}
+    assert ids1.isdisjoint(ids2)          # no task appears on both pages
+
+def test_pagination_limit_capped():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r = client.get(f"{base}?limit=5000", headers=auth(ctx["owner_token"]))
+    assert r.status_code == 422           # le=100 rejects greedy requests
+
+def test_pagination_bad_offset():
+    base = f"/teams/{ctx['team_id']}/projects/{ctx['project_id']}/tasks"
+    r = client.get(f"{base}?offset=-5", headers=auth(ctx["owner_token"]))
+    assert r.status_code == 422

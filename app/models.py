@@ -17,7 +17,7 @@ class Role(str, enum.Enum):
 class TaskStatus(str, enum.Enum):
     todo = "todo"
     in_progress = "in_progress"
-    viewer = "viewer"
+    done = "done"
 
 class TaskPriority(str, enum.Enum):
     low = "low"
