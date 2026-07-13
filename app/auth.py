@@ -10,7 +10,9 @@ from pip._internal.utils import retry
 from sqlalchemy.orm import Session, dependency
 from .database import get_db
 from . import models
+from .config import SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES
 
+ALGORITHM = "HS256"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -20,9 +22,6 @@ def hash_password(password: str) -> str:
 def verify_password(plain : str, hashed : str) -> bool:
     return pwd_context.verify(plain, hashed)
 
-SECRET_KEY = ""
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 def create_access_token(user_id : int) -> str:
     payload = {
